@@ -1,3 +1,5 @@
 src/*.o
 tiny-AES-c/*.o
 stlink-tool
+stlink-tool.exe
+/.vscode

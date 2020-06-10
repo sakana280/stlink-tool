@@ -21,7 +21,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
+#include <Winsock2.h>
 
 #include "../tiny-AES-c/aes.h"
 #include "crypto.h"

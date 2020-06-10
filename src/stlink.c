@@ -24,8 +24,6 @@
 #include <fcntl.h>
 #include <sys/types.h> 
 #include <sys/stat.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include <string.h>
 #include <libusb.h>
 
@@ -232,7 +230,7 @@ int stlink_dfu_download(libusb_device_handle *dev_handle,
     return -3;
   }
 
-  usleep(dfu_status.bwPollTimeout * 1000);
+  Sleep(dfu_status.bwPollTimeout);
 
   if (stlink_dfu_status(dev_handle, &dfu_status)) {
     return -1;
@@ -332,38 +330,27 @@ int stlink_flash(libusb_device_handle *dev_handle,
 		 unsigned int base_offset,
 		 unsigned int chunk_size,
 		 struct STLinkInfos *stlink_infos) {
-  unsigned char *firmware, firmware_chunk[chunk_size];
+  unsigned char firmware_chunk[chunk_size];
   unsigned int cur_chunk_size, flashed_bytes, file_size;
-  int fd, res;
+  FILE *fd;
+  int res;
   struct stat firmware_stat;
 
-  fd = open(filename, O_RDONLY);
-  if (fd == -1) {
+  fd = fopen(filename, "rb");
+  if (fd == NULL) {
     fprintf(stderr, "File opening failed\n");
     return -1;
   }
   
-  fstat(fd, &firmware_stat);
+  stat(filename, &firmware_stat);
 
   file_size = firmware_stat.st_size;
-
-  firmware = mmap(NULL, file_size, PROT_WRITE, MAP_PRIVATE, fd, 0);
-  if (firmware == MAP_FAILED) {
-    fprintf(stderr, "mmap failure\n");
-    return -1;
-  }
 
   printf("Loaded firmware : %s, size : %d bytes\n", filename, (int)file_size);
 
   flashed_bytes = 0;
 
-  while (flashed_bytes < file_size) {
-    if ((flashed_bytes+chunk_size) > file_size) {
-      cur_chunk_size = file_size - flashed_bytes;
-    } else {
-      cur_chunk_size = chunk_size;
-    }
-
+  do {
     res = stlink_erase(dev_handle, base_offset+flashed_bytes);
     if (res) {
       fprintf(stderr, "Erase error\n");
@@ -376,11 +363,17 @@ int stlink_flash(libusb_device_handle *dev_handle,
       return res;
     }
 
-    memcpy(firmware_chunk, firmware+flashed_bytes, cur_chunk_size);
+    cur_chunk_size = fread(firmware_chunk, sizeof(unsigned char), chunk_size, fd);
+    if (cur_chunk_size <= 0) {
+      fprintf(stderr, "Read error\n");
+      return cur_chunk_size;
+    }
+
+    // Zero out the buffer after any partial reads (eg the final chunk).
     memset(firmware_chunk+cur_chunk_size, 0xff, chunk_size-cur_chunk_size);
     res = stlink_dfu_download(dev_handle, firmware_chunk, chunk_size, 2, stlink_infos);
     if (res) {
-      fprintf(stderr, "Erase error\n");
+      fprintf(stderr, "Write error\n");
       return res;
     }
 
@@ -388,10 +381,9 @@ int stlink_flash(libusb_device_handle *dev_handle,
     fflush(stdout); /* Flush stdout buffer */
 
     flashed_bytes += cur_chunk_size;
-  }
+  } while (flashed_bytes < file_size);
 
-  munmap(firmware, file_size);
-  close(fd);
+  fclose(fd);
 
   printf("\n");
 

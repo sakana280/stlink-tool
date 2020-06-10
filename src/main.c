@@ -21,9 +21,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <libusb.h>
 
+#include "getopt.h"
 #include "stlink.h"
 
 #define STLINK_VID 0x0483
